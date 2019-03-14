@@ -29,11 +29,15 @@ tf.config.threading.set_inter_op_parallelism_threads(args.threads)
 tf.config.threading.set_intra_op_parallelism_threads(args.threads)
 
 # Create logdir name
+<<<<<<< HEAD
 args.logdir = "logs\\{}-{}-{}".format(
+=======
+args.logdir = os.path.join("logs", "{}-{}-{}".format(
+>>>>>>> 49bc6ec0e362ba108e1a1e95edfb5b4e529dd7dc
     os.path.basename(__file__),
     datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
     ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", key), value) for key, value in sorted(vars(args).items())))
-)
+))
 
 # Load data
 mnist = MNIST()
