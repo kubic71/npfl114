@@ -2,6 +2,7 @@
 import argparse
 import datetime
 import os
+import sys
 import re
 
 import numpy as np
@@ -9,18 +10,22 @@ import tensorflow as tf
 
 from mnist import MNIST
 
+
 # Parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=50, type=int, help="Batch size.")
 parser.add_argument("--decay", default=None, type=str, help="Learning decay rate type")
+# parser.add_argument("--decay", default="polynomial", type=str, help="Learning decay rate type")
 parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
 parser.add_argument("--hidden_layer", default=200, type=int, help="Size of the hidden layer.")
 parser.add_argument("--learning_rate", default=0.01, type=float, help="Initial learning rate.")
 parser.add_argument("--learning_rate_final", default=None, type=float, help="Final learning rate.")
+# parser.add_argument("--learning_rate_final", default=0.0001, type=float, help="Final learning rate.")
 parser.add_argument("--momentum", default=None, type=float, help="Momentum.")
 parser.add_argument("--optimizer", default="SGD", type=str, help="Optimizer to use.")
+# parser.add_argument("--optimizer", default="Adam", type=str, help="Optimizer to use.")
 parser.add_argument("--recodex", default=False, action="store_true", help="Evaluation in ReCodEx.")
-parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+parser.add_argument("--threads", default=8, type=int, help="Maximum number of threads to use.")
 args = parser.parse_args()
 
 # Fix random seeds
@@ -62,14 +67,61 @@ model = tf.keras.Sequential([
 # by using `model.optimizer.learning_rate(model.optimizer.iterations)`,
 # so after training this value should be `args.learning_rate_final`.
 
+#
+# learning_rate - default = 0.01
+# learning_rate_final - default = None
+# momentum - default = None
+
+
+### Learning rate ###
+# decay not specified
+if args.decay is None:
+    learning_rate = args.learning_rate
+else:
+    decay_steps = args.epochs * (mnist.train.size / args.batch_size)   # or -1 ???
+
+    if args.decay == "polynomial":
+        learning_rate = tf.keras.optimizers.schedules.PolynomialDecay(
+            args.learning_rate,
+            decay_steps,   # epochs * (size / batch_size)
+            args.learning_rate_final)
+    elif args.decay == "exponential":
+        decay_rate = args.learning_rate_final / args.learning_rate
+        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(
+            args.learning_rate,
+            decay_steps,
+            decay_rate=decay_rate,
+            )
+
+    else:
+        print("Unknown decay type!")
+        sys.exit(69)
+
+
+if args.optimizer == "SGD":
+    if args.momentum is None:
+        opt = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+    else:
+        opt = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=args.momentum)
+elif args.optimizer == "Adam":
+    opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+else:
+    print("Invalid optimizer argument")
+    sys.exit(70)
+
+
 model.compile(
-    optimizer=None,
+    optimizer=opt,
     loss=tf.keras.losses.SparseCategoricalCrossentropy(),
     metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
 )
 
 tb_callback=tf.keras.callbacks.TensorBoard(args.logdir, histogram_freq=1, update_freq=1000, profile_batch=1)
 tb_callback.on_train_end = lambda *_: None
+
+#print("Before learning learning_rate:", model.optimizer.learning_rate(model.optimizer.iterations))
+
 model.fit(
     mnist.train.data["images"], mnist.train.data["labels"],
     batch_size=args.batch_size, epochs=args.epochs,
@@ -82,6 +134,11 @@ test_logs = model.evaluate(
 )
 tb_callback.on_epoch_end(1, dict(("val_test_" + metric, value) for metric, value in zip(model.metrics_names, test_logs)))
 
+try:
+    print("After learning learning_rate:", model.optimizer.learning_rate(model.optimizer.iterations))
+except TypeError:
+    pass
 # TODO: Write test accuracy as percentages rounded to two decimal places.
+accuracy = test_logs[1]
 with open("mnist_training.out", "w") as out_file:
     print("{:.2f}".format(100 * accuracy), file=out_file)
