@@ -20,7 +20,7 @@ class MNIST:
 
         @property
         def data(self):
-            return self._data
+            return self._data   # 55000 x 28 x 28 x 1 np array
 
         @property
         def size(self):
