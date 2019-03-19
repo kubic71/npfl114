@@ -84,7 +84,7 @@ else:
         learning_rate = tf.keras.optimizers.schedules.PolynomialDecay(
             args.learning_rate,
             decay_steps,   # epochs * (size / batch_size)
-            args.learning_rate_final)
+            args.learning_rate_final )
     elif args.decay == "exponential":
         decay_rate = args.learning_rate_final / args.learning_rate
         learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(
