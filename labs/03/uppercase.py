@@ -9,6 +9,10 @@ import tensorflow as tf
 
 from uppercase_data import UppercaseData
 
+def convert_to_text(window):
+    return "".join(list(map(lambda s: uppercase_data.train.alphabet[s], window)))
+
+
 # Parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--alphabet_size", default=None, type=int, help="If nonzero, limit alphabet to this many most frequent chars.")
@@ -55,6 +59,38 @@ uppercase_data = UppercaseData(args.window, args.alphabet_size)
 #   You can then flatten the one-hot encoded windows and follow with a dense layer.
 # - Alternatively, you can use `tf.keras.layers.Embedding`, which is an efficient
 #   implementation of one-hot encoding followed by a Dense layer, and flatten afterwards.
+
+
+
+
+model = tf.keras.Sequential([
+    tf.layers.InputLayer(input_shape=[2 * args.window + 1], dtype=tf.int32),
+    tf.layers.Lambda(lambda x: tf.one_hot(x, len(uppercase_data.train.alphabet))),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(args.hidden_layer, activation=tf.nn.relu),
+    tf.keras.layers.Dense(2, activation=tf.nn.relu),
+    tf.keras.layers.Dense(uppercase_data.LABELS, activation=tf.nn.softmax),
+])
+
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+)
+
+
+tb_callback=tf.keras.callbacks.TensorBoard(args.logdir)
+model.fit(uppercase_data.train.data["windows"], uppercase_data.train.data["labels"], batch_size=args.batch_size, epochs=args.epochs, callbacks=[tb_callback])
+
+
+
+
+test_logs = model.evaluate(
+    uppercase_data.dev.data["windows"], uppercase_data.dev.data["labels"] )
+print("Test logs: ", test_logs)
+
+
 
 with open("uppercase_test.txt", "w", encoding="utf-8") as out_file:
     # TODO: Generate correctly capitalized test set.
