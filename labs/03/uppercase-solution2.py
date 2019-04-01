@@ -31,8 +31,8 @@ parser.add_argument("--epochs_low", default=5, type=int, help="Number of epochs.
 parser.add_argument("--epochs_high", default=10, type=int, help="Number of epochs.")
 parser.add_argument("--hidden_layers_low", default=1, type=int, help="Hidden layer configuration.")
 parser.add_argument("--hidden_layers_high", default=4, type=int, help="Hidden layer configuration.")
-parser.add_argument("--hidden_layer_size_low", default=100, type=int, help="Hidden layer configuration.")
-parser.add_argument("--hidden_layer_size_high", default=250, type=int, help="Hidden layer configuration.")
+parser.add_argument("--hidden_layer_size_low", default=4, type=int, help="Hidden layer configuration.")
+parser.add_argument("--hidden_layer_size_high", default=100, type=int, help="Hidden layer configuration.")
 parser.add_argument("--threads", default=8, type=int, help="Maximum number of threads to use.")
 parser.add_argument("--window_low", default=5, type=int, help="Window size to use.")
 parser.add_argument("--window_high", default=50, type=int, help="Window size to use.")
@@ -47,20 +47,31 @@ args = parser.parse_args()
 #args.hidden_layers = [int(hidden_layer) for hidden_layer in args.hidden_layers.split(",") if hidden_layer]
 
 # Fix random seeds
-#np.random.seed(42)
-#tf.random.set_seed(42)
-#tf.config.threading.set_inter_op_parallelism_threads(args.threads)
-#tf.config.threading.set_intra_op_parallelism_threads(args.threads)
+np.random.seed(42)
+tf.random.set_seed(42)
+tf.config.threading.set_inter_op_parallelism_threads(args.threads)
+tf.config.threading.set_intra_op_parallelism_threads(args.threads)
 
 # choose random params
-alphabet_size = int(random_log(args.alphabet_size_low, args.alphabet_size_high))
-batch_size = int(random_log(args.batch_size_low, args.batch_size_high))
-epochs = random.randint(args.epochs_low, args.epochs_high)
-hidden_layers = random.randint(args.hidden_layers_low, args.hidden_layers_high)
-hidden_layer_size = int(random_log(args.hidden_layer_size_low, args.hidden_layer_size_high))
-window = random.randint(args.window_low, args.window_high)
-learning_rate_start = random_log(args.learning_rate_start_low, args.learning_rate_start_high)
-learning_decay = random_log(args.learning_rate_decay_low, args.learning_rate_decay_high)
+# alphabet_size = int(random_log(args.alphabet_size_low, args.alphabet_size_high))
+# batch_size = int(random_log(args.batch_size_low, args.batch_size_high))
+# epochs = random.randint(args.epochs_low, args.epochs_high)
+# hidden_layers = random.randint(args.hidden_layers_low, args.hidden_layers_high)
+# hidden_layer_size = int(random_log(args.hidden_layer_size_low, args.hidden_layer_size_high))
+# window = random.randint(args.window_low, args.window_high)
+# learning_rate_start = random_log(args.learning_rate_start_low, args.learning_rate_start_high)
+# learning_decay = random_log(args.learning_rate_decay_low, args.learning_rate_decay_high)
+
+alphabet_size = 60
+batch_size = 2776
+epochs = 30
+hidden_layers = 2
+hidden_layer_size = 76
+window = 20
+
+
+learning_rate_start = 0.14
+learning_decay = 0.005
 
 
 
@@ -108,7 +119,6 @@ model.add(tf.keras.layers.InputLayer(input_shape=[2 * window + 1], dtype=tf.int3
 model.add(tf.keras.layers.Lambda(lambda x: tf.one_hot(x, len(uppercase_data.train.alphabet))))
 model.add(tf.keras.layers.Flatten())
 
-model.add(tf.keras.layers.Dropout(rate=args.dropout))
 for i in range(hidden_layers):
     model.add(tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu))
     model.add(tf.keras.layers.Dropout(rate=args.dropout))
@@ -126,29 +136,30 @@ learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(
 
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-    # optimizer=tf.keras.optimizers.Adam(),
+    # optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+    optimizer=tf.keras.optimizers.Adam(),
 
     loss=tf.keras.losses.SparseCategoricalCrossentropy(),
     metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
 )
 
 
-#tb_callback=tf.keras.callbacks.TensorBoard(args.logdir, update_freq=1000, profile_batch=1)
-#tb_callback.on_train_end = lambda *_: None
+tb_callback=tf.keras.callbacks.TensorBoard(args.logdir, update_freq=1000, profile_batch=1)
+tb_callback.on_train_end = lambda *_: None
 
 
 try:
     model.fit(uppercase_data.train.data["windows"], uppercase_data.train.data["labels"],
               batch_size=batch_size,
               epochs=epochs,
-              validation_data=(uppercase_data.dev.data["windows"], uppercase_data.dev.data["labels"])
-#              callbacks=[tb_callback]
+              validation_data=(uppercase_data.dev.data["windows"], uppercase_data.dev.data["labels"]),
+             callbacks=[tb_callback]
               )
 except KeyboardInterrupt:
-    sys.exit(0)
-    #print("model saved!")
-    #model.save(os.path.join("models", model_name + ".h5"))
+    pass
+    # print("model saved!")
+    # model.save(os.path.join("models", model_name + ".h5"))
+    # sys.exit(0)
 
 #
 # test_logs = model.evaluate(
@@ -162,11 +173,9 @@ print(test_logs)
 accuracy = test_logs[1]
 print("Model evaluated, accuracy: ", accuracy)
 
-# model.save(os.path.join("models", "{:.3f}".format(100 * accuracy)+ "__"  + model_name + ".h5"))
+model.save(os.path.join("models", "{:.3f}".format(100 * accuracy)+ "__"  + model_name + ".h5"))
 f = open(os.path.join("scores", "{:.3f}".format(100 * accuracy)+ "__" + model_name), "w")
 f.close()
-
-
 
 with open("uppercase_test.txt", "w", encoding="utf-8") as out_file:
     # TODO: Generate correctly capitalized test set.
