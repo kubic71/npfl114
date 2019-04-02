@@ -4,6 +4,75 @@ import tensorflow as tf
 
 from mnist import MNIST
 
+
+def add_conv_layer(inputs, filters, kernel_size, stride, padding):
+    print("Conv2D layer: filters={}, kernel_size={}, stride={}, padding={}".format(filters, kernel_size, stride, padding))
+    return tf.keras.layers.Conv2D(filters=filters, kernel_size=kernel_size, strides=stride, padding=padding, activation="relu")(inputs)
+
+
+def add_conv_batchnorm_layer(inputs, filters, kernel_size, stride, padding):
+    print("Conv2D batchnorm layer: filters={}, kernel_size={}, stride={}, padding={}".format(filters, kernel_size, stride, padding))
+    # - `CB-filters-kernel_size-stride-padding`: Same as `C`, but use batch normalization.
+    #   In detail, start with a convolutional layer without bias and activation,
+    #   then add batch normalization layer, and finally ReLU activation.
+    out = tf.keras.layers.Conv2D(filters=filters, kernel_size=kernel_size, strides=stride, padding=padding, activation=None, use_bias=False)(inputs)
+    out = tf.keras.layers.BatchNormalization()(out)
+    return tf.keras.layers.Activation("relu")(out)
+
+
+def add_max_pool_layer(inputs, kernel_size, stride):
+    print("Maxpool layer: kernel_size={}, stride={}".format(kernel_size, stride))
+    return tf.keras.layers.MaxPool2D(pool_size=kernel_size, strides=stride)(inputs)
+
+
+def add_flatten_layer(inputs):
+    return tf.keras.layers.Flatten()(inputs)
+
+
+def add_dense_layer(inputs, hidden_layer_size):
+    # - `D-hidden_layer_size`: Add a dense layer with ReLU activation and specified size.
+    return tf.keras.layers.Dense(hidden_layer_size, activation="relu")(inputs)
+
+
+
+
+def add_layer(param_string, inputs):
+    l_type, params = param_string.split("-")[0], param_string.split("-")[1:]
+    print("Adding layer {} with params {}".format(l_type, str(params)))
+
+    if l_type == "C":
+        filters, kernel_size, stride, padding = params
+        filters, kernel_size, stride = int(filters), int(kernel_size), int(stride)
+        return add_conv_layer(inputs, filters, kernel_size, stride, padding)
+    elif l_type == "CB":
+        filters, kernel_size, stride, padding = params
+        filters, kernel_size, stride = int(filters), int(kernel_size), int(stride)
+        return add_conv_batchnorm_layer(inputs, filters, kernel_size, stride, padding)
+    elif l_type == "M":
+        kernel_size, stride = map(int, params)
+        return add_max_pool_layer(inputs, kernel_size, stride)
+    elif l_type == "F":
+        return add_flatten_layer(inputs)
+    elif l_type == "D":
+        hidden_layer_size = int(params[0])
+        return add_dense_layer(inputs, hidden_layer_size)
+
+    elif l_type == "R":
+        # - `R-[layers]`: Add a residual connection. The `layers` contain a specification
+        #   of at least one convolutional layer (but not a recursive residual connection `R`).
+        #   The input to the specified layers is then added to their output.
+        print(param_string)
+        layers_spec = param_string[param_string.index("[")+1:param_string.index("]")].split(",")
+        hidden = inputs
+        for layer_param in layers_spec:
+            hidden = add_layer(layer_param, hidden)
+
+        return tf.keras.layers.Add()([hidden, inputs])
+
+
+
+
+
 # The neural network model
 class Network(tf.keras.Model):
     def __init__(self, args):
@@ -17,12 +86,18 @@ class Network(tf.keras.Model):
         #   In detail, start with a convolutional layer without bias and activation,
         #   then add batch normalization layer, and finally ReLU activation.
         # - `M-kernel_size-stride`: Add max pooling with specified size and stride.
-        # - `R-[layers]`: Add a residual connection. The `layers` contain a specification
-        #   of at least one convolutional layer (but not a recursive residual connection `R`).
-        #   The input to the specified layers is then added to their output.
+
         # - `F`: Flatten inputs. Must appear exactly once in the architecture.
-        # - `D-hidden_layer_size`: Add a dense layer with ReLU activation and specified size.
+
         # Produce the results in variable `hidden`.
+
+        hidden = inputs
+
+        for layer_param in re.findall(r"C-[^,]*,*|R-\[[^]]*\],*|F,*|D-[^,]*,*|CB-[^,]*,*|M-[^,]*,*", args.cnn):
+            if layer_param[-1] == ",":
+                layer_param = layer_param[:-1]
+            hidden = add_layer(layer_param, hidden)
+
 
         # Add the final output layer
         outputs = tf.keras.layers.Dense(MNIST.LABELS, activation=tf.nn.softmax)(hidden)
@@ -61,7 +136,8 @@ if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", default=50, type=int, help="Batch size.")
-    parser.add_argument("--cnn", default=None, type=str, help="CNN architecture.")
+    # parser.add_argument("--cnn", default=None, type=str, help="CNN architecture.")
+    parser.add_argument("--cnn", default="C-8-3-5-valid,R-[C-8-3-1-same,C-8-3-1-same],F,D-50", type=str, help="CNN architecture.")
     parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
     parser.add_argument("--recodex", default=False, action="store_true", help="Evaluation in ReCodEx.")
     parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
