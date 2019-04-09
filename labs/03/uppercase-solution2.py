@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from uppercase_data import UppercaseData
+from tensorflow.keras.utils import to_categorical
 
 def convert_to_text(window):
     return "".join(list(map(lambda s: uppercase_data.train.alphabet[s], window)))
@@ -62,13 +63,15 @@ tf.config.threading.set_intra_op_parallelism_threads(args.threads)
 # learning_rate_start = random_log(args.learning_rate_start_low, args.learning_rate_start_high)
 # learning_decay = random_log(args.learning_rate_decay_low, args.learning_rate_decay_high)
 
-alphabet_size = 60
-batch_size = 2776
+alphabet_size = 70
+batch_size = 16000
 epochs = 30
 hidden_layers = 2
-hidden_layer_size = 76
-window = 20
+hidden_layer_size = 500
+window = 12
 
+label_smoothing = True
+label_smoothing_level = 0.1
 
 learning_rate_start = 0.14
 learning_decay = 0.005
@@ -91,6 +94,12 @@ print("Data loaded!")
 size = uppercase_data.train.size
 uppercase_data.train.data["windows"] = uppercase_data.train.data["windows"][:int(size*args.smaller_data)]
 uppercase_data.train.data["labels"] = uppercase_data.train.data["labels"][:int(size*args.smaller_data)]
+
+if label_smoothing:
+    uppercase_data.dev.data["labels"] = to_categorical(uppercase_data.dev.data["labels"])
+    uppercase_data.train.data["labels"] = to_categorical(uppercase_data.train.data["labels"])
+    uppercase_data.test.data["labels"] = to_categorical(uppercase_data.test.data["labels"])
+
 
 # TODO: Implement a suitable model, optionally including regularization, select
 # good hyperparameters and train the model.
@@ -135,13 +144,24 @@ learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(
             decay_rate=learning_decay)
 
 
-model.compile(
-    # optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-    optimizer=tf.keras.optimizers.Adam(),
+learning_rate = 0.01
+if label_smoothing:
 
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
-)
+    model.compile(
+        # optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing_level),
+        metrics=[tf.keras.metrics.CategoricalAccuracy(name="accuracy")]
+    )
+else:
+    model.compile(
+        # optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+    )
+
 
 
 tb_callback=tf.keras.callbacks.TensorBoard(args.logdir, update_freq=1000, profile_batch=1)
@@ -168,7 +188,7 @@ except KeyboardInterrupt:
 
 
 test_logs = model.evaluate(
-    uppercase_data.dev.data["windows"], uppercase_data.dev.data["labels"])
+    uppercase_data.dev.data["windows"], uppercase_data.dev.data["labels"], batch_size=batch_size)
 print(test_logs)
 accuracy = test_logs[1]
 print("Model evaluated, accuracy: ", accuracy)

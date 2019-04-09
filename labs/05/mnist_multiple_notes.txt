@@ -1,0 +1,13 @@
+Perform whether one image contains bigger number then the other
+    - direct classification
+
+pass list of inputs to the model
+pass list of outputs to the model
+pass list of losses to the model
+
+use keras.model to represent model
+model.fit, model.compile not flexible enough
+
+
+prepare-batches
+
