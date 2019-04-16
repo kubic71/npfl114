@@ -9,6 +9,7 @@ from caltech42 import Caltech42
 class Network:
     def __init__(self, args):
         # TODO: You should define `self.model`. You should use the following layer:
+        # generuje feature vektory velikosti 1280
         #   mobilenet = tfhub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280])
         # The layer:
         # - if given `trainable=True/False` to KerasLayer constructor, the layer weights
@@ -29,6 +30,8 @@ class Network:
         # where `serving_only` controls whether only prediction, or also training/evaluation
         # graphs are saved. To again load the model, use
         #   model = tf.keras.experimental.load_from_saved_model(path, {"KerasLayer": tfhub.KerasLayer})
+        # when serving only is False, the number of parameters is 3x larger when using Adam
+
 
         self.tb_callback=tf.keras.callbacks.TensorBoard(args.logdir, update_freq=1000, profile_batch=1)
         self.tb_callback.on_train_end = lambda *_: None

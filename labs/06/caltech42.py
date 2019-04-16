@@ -12,7 +12,7 @@ import numpy as np
 #   applied to an image during batch construction.
 #
 # In any way, the batch images must be Numpy arrays with shape (224, 224, 3)
-# and type np.float32. (In order to convert tf.Tensor to Numpty array
+# and type np.float32. (In order to convert tf.Tensor to Numpy array
 # use `tf.Tensor.numpy()` method.)
 #
 # If all images are of the above datatype after dataset construction

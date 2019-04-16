@@ -1,0 +1,29 @@
+TensorFLow Hub
+    Mobile-Net
+
+
+
+Caltech42 - obrazky ruzne velke
+    - mozno vyhodnocovat casti obrazku
+    - image_processing - resizuje obrazky na 224 x 224
+
+
+Sequence classification
+    - dim rika jak velky bude vystup
+        - neznamena, ze stav bude taky stejne velky
+    - mozno pridat Fully connected Relu Dense vrstvu za vystup (stejna pro kazdou pozici)
+    - hidden_layer parametr
+    - pouzivat keras znamena pouzivat tf.keras.Model, model.fit,
+
+    - SimpleRNNCell se chova jako layer
+
+
+tf.keras.layers.SimpleRNN - zawrapovana verze
+tf.keras.layers.LSTM
+     - return sequences
+
+Co delas FC?
+(batch, input-dim) -> (batch, outpu-dim)
+
+CO se stane pri vicerozmernem vstupu?
+(b, a, b, c, i) -> (b, a, b, c, o)

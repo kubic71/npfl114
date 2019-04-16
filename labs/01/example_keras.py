@@ -31,6 +31,7 @@ model.compile(
     metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
 )
 
+
 model.fit(
     mnist.train.data["images"], mnist.train.data["labels"],
     batch_size=args.batch_size, epochs=args.epochs,

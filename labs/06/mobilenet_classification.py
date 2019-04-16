@@ -28,9 +28,11 @@ model = tf.keras.Model(inputs=inputs, outputs=predictions)
 for image_name in args.images:
     # Load the file
     with open(image_name, "rb") as image_file:
-        image = tf.image.decode_image(image_file.read(), channels=3, dtype=tf.float32)
+        image = tf.image.decode_image(image_file.read(), channels=3, dtype=tf.float32)  # decodes jpg/png and converts it to tensor
     # Resize to 224,224
     image = tf.image.resize(image, size=(224, 224))
+
     # Compute the prediction
+    # expand_dims makes tensor [1, 224, 224, 3]
     prediction = model.predict(tf.expand_dims(image, 0))[0]
     print("Image {}: label {}".format(image_name, imagenet_classes.imagenet_classes[np.argmax(prediction)]))
