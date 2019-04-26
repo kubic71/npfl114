@@ -3,7 +3,20 @@ import sys
 import urllib.request
 import zipfile
 
+import time
 import numpy as np
+from PIL import Image
+import io
+
+
+def image_processing_fit_to_scale(image_bytes):
+    im = Image.open(io.BytesIO(image_bytes))
+    im = im.convert("RGB")
+    #print(im.mode)
+    im = im.resize((224, 224))
+    im = np.array(im)
+    im = im / 255.0
+    return im
 
 # Note: Because images have different size, the user
 # - can specify `image_processing` method to dataset construction, which
@@ -50,7 +63,9 @@ class Caltech42:
         def size(self):
             return self._size
 
-        def batches(self, size=None, image_processing=None):
+
+        def batches(self, size=None, image_processing=image_processing_fit_to_scale):
+            global image
             permutation = self._shuffler.permutation(self._size) if self._shuffler else np.arange(self._size)
             while len(permutation):
                 batch_size = min(size or np.inf, len(permutation))
@@ -62,12 +77,18 @@ class Caltech42:
                     if key == "images":
                         batch[key] = np.zeros([batch_size, Caltech42.MIN_SIZE, Caltech42.MIN_SIZE, Caltech42.C], dtype=np.float32)
                         for i, index in enumerate(batch_perm):
+                            self.im_data = self._data[key][index]
                             data = image_processing(self._data[key][index]) if image_processing is not None else self._data[key][index]
-                            if type(data) != np.ndarray:
-                                raise ValueError("Caltech42: Expecting images after `image_processing` to be Numpy `ndarray`")
-                            if data.dtype != np.float32 or data.shape != (Caltech42.MIN_SIZE, Caltech42.MIN_SIZE, Caltech42.C):
-                                raise ValueError("Caltech42: Expecting images after `image_processing` to have shape {} and dtype {}".format(
-                                    (Caltech42.MIN_SIZE, Caltech42.MIN_SIZE, Caltech42.C), np.float32))
+                            self.im = data
+                            #print("Data.dtype", data.dtype)
+                            #print("data.shape", data.shape)
+                            #print("type(data)", type(data))
+                            image = data #  TODO testing
+                            # if type(data) != np.ndarray:
+                            #     raise ValueError("Caltech42: Expecting images after `image_processing` to be Numpy `ndarray`")
+                            # if data.dtype != np.float32 or data.shape != (Caltech42.MIN_SIZE, Caltech42.MIN_SIZE, Caltech42.C):
+                            #     raise ValueError("Caltech42: Expecting images after `image_processing` to have shape {} and dtype {}".format(
+                            #         (Caltech42.MIN_SIZE, Caltech42.MIN_SIZE, Caltech42.C), np.float32))
                             batch[key][i] = image_processing(self._data[key][index]) if image_processing is not None else self._data[key][index]
                     else:
                         batch[key] = self._data[key][batch_perm]
