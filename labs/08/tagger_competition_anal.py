@@ -12,7 +12,7 @@ import time
 
 
 class Network:
-    def __init__(self, pdt, args, num_words, num_chars, num_tags):
+    def __init__(self, pdt, args, num_words, num_chars, num_tags, num_anal_tags):
 
         self.learning_rate = 0.001
         # TODO: Define a suitable model.
@@ -25,6 +25,12 @@ class Network:
 
         charseqs = tf.keras.Input(shape=(None,), name="charseqs")
         charseq_ids = tf.keras.Input(shape=(None,), dtype='int32', name="charseq_ids")
+
+
+        pos_ids = tf.keras.Input(shape=(None, None), dtype='int32', name="pos_ids")
+        # pos_ids (Batch_size, max_sentence_len, max_word_pos_len)
+
+
 
 
 
@@ -48,6 +54,18 @@ class Network:
                                 bias_regularizer=tf.keras.regularizers.L1L2(l2=args.l2_reg)
                                 ), merge_mode="sum")(chars_embedding)
 
+
+        anal_tags_embedding = tf.keras.layers.Embedding(num_anal_tags, args.anal_pos_embedding_dim)(pos_ids)
+
+        # pos_ids               (batch_size, words_in_sentence, n_postags)
+        # anal_tags_embedding   (batch_size, words_in_sentence, n_postags, postag_dim)
+
+        anal_tags_gru = tf.keras.layers.TimeDistributed(tf.keras.layers.Bidirectional(tf.keras.layers.GRU(args.anal_pos_embedding_dim), merge_mode="sum"))(anal_tags_embedding)
+        # anal_tags_gru         (batch_size, words_in_sentence, anal_pos_embedding_dim)
+
+
+
+
         # Then, copy the computed embeddings of unique words to the correct sentence
         # positions. To that end, use `tf.gather` operation, which is given a matrix
         # and a tensor of indices, and replace each index by a corresponding row
@@ -62,7 +80,7 @@ class Network:
         self.words_embedding_layer = tf.keras.layers.Embedding(num_words, args.we_dim, trainable=args.trainable_word_embedding)
         # self.words_embedding_layer.trainable = args.trainable_word_embedding
         words_embedding = self.words_embedding_layer(word_ids)
-        con = tf.keras.layers.Concatenate()([words_embedding, gather])
+        con = tf.keras.layers.Concatenate()([words_embedding, gather, anal_tags_gru])
         con = tf.keras.layers.Dropout(args.dropout)(con)
 
         # TODO(we): create specified `args.rnn_cell` rnn cell (lstm, gru) with
@@ -96,16 +114,10 @@ class Network:
             num_tags, activation=tf.keras.activations.softmax)(x)
 
         self.model = tf.keras.Model(
-            inputs=[word_ids, charseq_ids, charseqs], outputs=predictions)
-
-        print("self.words_embedding_layer.trainable:", self.words_embedding_layer.trainable)
-        print("self.words_embedding_layer.trainable_variables", self.words_embedding_layer.trainable_variables)
+            inputs=[word_ids, charseq_ids, charseqs, pos_ids], outputs=predictions)
 
         print("loading word embedding weights...")
         self.load_word_embedding_weights(pdt)
-
-        print("self.words_embedding_layer.trainable:", self.words_embedding_layer.trainable)
-        print("self.words_embedding_layer.trainable_variables", self.words_embedding_layer.trainable_variables)
 
         tf.keras.utils.plot_model(self.model, 'tagger_cle_rnn_model.png', show_shapes=True)
 
@@ -147,7 +159,7 @@ class Network:
             return 0.00005
 
 
-    @tf.function(input_signature=[[tf.TensorSpec(shape=[None, None], dtype=tf.int32)] * 3,
+    @tf.function(input_signature=[[tf.TensorSpec(shape=[None, None], dtype=tf.int32)] * 3 + [tf.TensorSpec(shape=[None, None, None], dtype=tf.int32)],
                                   tf.TensorSpec(shape=[None, None], dtype=tf.int32)])
     def train_batch(self, inputs, tags):
         # TODO: Generate a mask from `tags` containing ones in positions
@@ -192,7 +204,7 @@ class Network:
         for batch in dataset.batches(args.batch_size):
             batch_i += 1
             print("\rBatch {}/{}".format(batch_i, math.ceil(dataset.size()/args.batch_size)), end="")
-            self.train_batch([batch[dataset.FORMS].word_ids, batch[dataset.FORMS].charseq_ids, batch[dataset.FORMS].charseqs],
+            self.train_batch([batch[dataset.FORMS].word_ids, batch[dataset.FORMS].charseq_ids, batch[dataset.FORMS].charseqs, batch[dataset.FORMS].anal_tags],
                              batch[dataset.TAGS].word_ids)
 
     def train(self, pdt, args):
@@ -241,7 +253,7 @@ class Network:
         for batch in dataset.batches(args.batch_size):
             # TODO: Evaluate the given match, using the same inputs as in training.
             self.evaluate_batch([batch[dataset.FORMS].word_ids, batch[dataset.FORMS].charseq_ids,
-                                 batch[dataset.FORMS].charseqs], batch[dataset.TAGS].word_ids)
+                                 batch[dataset.FORMS].charseqs, batch[dataset.FORMS].anal_tags], batch[dataset.TAGS].word_ids)
 
         metrics = {name: float(metric.result())
                    for name, metric in self._metrics.items()}
@@ -278,7 +290,7 @@ class Network:
         for batch in dataset.batches(args.batch_size):
             batch_i += 1
             print("\rPredicting batch prob {}/{}".format(batch_i, math.ceil(dataset.size() / args.batch_size)), end="")
-            prediction_prob += self.predict_batch_prob([batch[0].word_ids, batch[0].charseq_ids, batch[0].charseqs])
+            prediction_prob += self.predict_batch_prob([batch[0].word_ids, batch[0].charseq_ids, batch[0].charseqs, batch[0].anal_tags])
 
         return prediction_prob
 
@@ -296,7 +308,7 @@ class Network:
             batch_i += 1
             print("\rPredicting batch {}/{}".format(batch_i, math.ceil(dataset.size()/args.batch_size)), end="")
 
-            prediction += self.predict_batch([batch[0].word_ids, batch[0].charseq_ids, batch[0].charseqs])
+            prediction += self.predict_batch([batch[0].word_ids, batch[0].charseq_ids, batch[0].charseqs, batch[0].anal_tags])
             # print(prediction)
         print()
 
@@ -353,7 +365,7 @@ if __name__ == "__main__":
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", default=25, type=int, help="Batch size.")
+    parser.add_argument("--batch_size", default=10, type=int, help="Batch size.")
     parser.add_argument("--epochs", default=1000, type=int, help="Number of epochs.")
     parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
     parser.add_argument("--export_every", default=10, type=int, help="Export annotations every...")
@@ -361,16 +373,18 @@ if __name__ == "__main__":
 
     parser.add_argument("--cle_dim", default=32, type=int, help="CLE embedding dimension.")
     parser.add_argument("--cle_layers", default=1,  type=int, help="Number of cle rnn layers")
-    parser.add_argument("--max_sentences", default=0, type=int, help="Maximum number of sentences to load.")
+    parser.add_argument("--max_sentences", default=5000, type=int, help="Maximum number of sentences to load.")
     parser.add_argument("--rnn_cell", default="LSTM", type=str, help="RNN cell type.")
-    parser.add_argument("--rnn_cell_dim", default=64, type=int, help="RNN cell dimension.")
+    parser.add_argument("--rnn_cell_dim", default=32, type=int, help="RNN cell dimension.")
     parser.add_argument("--we_dim", default=300, type=int, help="Word embedding dimension.")
-    parser.add_argument("--reccurent_layers", default=2, type=int, help="Number of reccurent layers")
+    parser.add_argument("--reccurent_layers", default=4, type=int, help="Number of reccurent layers")
     parser.add_argument("--dropout", default=0.5, type=float, help="Dropout")
     parser.add_argument("--dropout_before_softmax", default=0.5, type=float)
     parser.add_argument("--pretrained_file", default="c:/Users/Jakub/Downloads/only_used_small.vec", type=str, help="File with pretrained word embeddings")
     parser.add_argument("--trainable_word_embedding", default="yes", type=str, help="Whether or not word embedding layer is trainable")
     parser.add_argument("--l2_reg", default=0.01, type=float)
+    parser.add_argument("--anal_pos_embedding_dim", default=16, type=int)
+    parser.add_argument("--label_smoothing", default=0.1, type=float)
 
 
     """
@@ -420,27 +434,15 @@ if __name__ == "__main__":
     m = morpho.train.data[0]
     analyses = MorphoAnalyzer("czech_pdt_analyses")
 
-
-    def add_all_words(dataset):
-        for sentence in dataset.data[0].word_strings:
-            for word in sentence:
-                all_words.add(word)
-
-
-    # debug
     batch = list(morpho.train.batches(2))[0]
-    all_words = set()
-    add_all_words(morpho.train)
-    add_all_words(morpho.dev)
-    add_all_words(morpho.test)
-
 
     # Create the network and train
     print("Building netowrk...")
     network = Network(morpho, args,
                       num_words=len(morpho.train.data[morpho.train.FORMS].words),
                       num_tags=len(morpho.train.data[morpho.train.TAGS].words),
-                      num_chars=len(morpho.train.data[morpho.train.FORMS].alphabet))
+                      num_chars=len(morpho.train.data[morpho.train.FORMS].alphabet),
+                      num_anal_tags=len(morpho.pos_map))
 
     print("Starting training")
     try:

@@ -97,6 +97,7 @@ if __name__ == "__main__":
     # Load the data
     morpho = MorphoDataset("czech_cac", max_sentences=args.max_sentences)
 
+
     # Create the network and train
     network = Network(args,
                       num_words=len(morpho.train.data[morpho.train.FORMS].words),

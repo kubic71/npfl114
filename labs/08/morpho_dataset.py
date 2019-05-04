@@ -2,6 +2,9 @@ import os
 import sys
 import urllib.request
 import zipfile
+import io
+
+from morpho_analyzer import MorphoAnalyzer
 
 import numpy as np
 
@@ -22,6 +25,34 @@ import numpy as np
 #   - charseqs_map: String -> character_sequence_id map.
 #   - charseqs: Character_sequence_id -> [characters], where character is an index
 #       to the dataset alphabet.
+
+
+tag_map = {}
+
+
+class Counter:
+    def __init__(self, start):
+        self.start = start
+
+    def get_next(self, word):
+        global tag_map
+        self.start += 1
+        tag_map[word] = self.start
+        return self.start
+
+counter = Counter(1000)
+
+def load_pretrained_vectors(fname):
+    fin = io.open(fname, 'r', encoding='utf-8', newline='\n', errors='ignore')
+    n, d = map(int, fin.readline().split())
+    data = {}
+    for line in fin:
+        tokens = line.rstrip().split(' ')
+        data[tokens[0]] = list(map(float, tokens[1:]))
+    return data
+
+analyses = MorphoAnalyzer("czech_pdt_analyses")
+
 class MorphoDataset:
     _URL = "https://ufal.mff.cuni.cz/~straka/courses/npfl114/1819/datasets/"
 
@@ -133,6 +164,9 @@ class MorphoDataset:
                 batch = []
                 max_sentence_len = max(len(self._data[self.FORMS].word_ids[i]) for i in batch_perm)
 
+
+
+
                 # Word-level data
                 for factor in self._data:
                     batch.append(MorphoDataset.FactorBatch(np.zeros([batch_size, max_sentence_len], np.int32)))
@@ -158,10 +192,33 @@ class MorphoDataset:
                     for i in range(len(charseqs)):
                         batch[f].charseqs[i, :len(charseqs[i])] = charseqs[i]
 
+
+
+                max_pos_len = 0
+                for i in batch_perm:
+                    sentence = self._data[self.FORMS].anal_pos_tags[i]
+                    for pos_word in sentence:
+                        max_pos_len = max(max_pos_len, len(pos_word))
+
+                # clip max_pos_len for GPU memory saving
+                max_pos_len = min(max_pos_len, 20)
+
+                batch[0].anal_tags = np.zeros([batch_size, max_sentence_len, max_pos_len], np.int32)
+
+                for i, index in enumerate(batch_perm):
+                    sentence = self._data[self.FORMS].anal_pos_tags[index]
+                    for j, pos_word in enumerate(sentence):
+                        for k, pos_tag in enumerate(pos_word):
+                            if k >= max_pos_len:
+                                break
+                            batch[0].anal_tags[i, j, k] = pos_tag
+
                 yield batch
 
 
-    def __init__(self, dataset, add_bow_eow=False, max_sentences=None):
+    def __init__(self, dataset, add_bow_eow=False, max_sentences=None, pretrained="5k.vec"):
+
+
         path = "{}.zip".format(dataset)
         if not os.path.exists(path):
             print("Downloading dataset {}...".format(dataset), file=sys.stderr)
@@ -175,3 +232,83 @@ class MorphoDataset:
                                                         shuffle_batches=dataset == "train",
                                                         add_bow_eow=add_bow_eow,
                                                         max_sentences=max_sentences))
+
+
+        print("")
+
+        # copy tag map
+        for word, index in self.train.data[2].words_map.items():
+            tag_map[word] = index
+
+        counter.start = len(self.train.data[2].words_map)
+
+        def add_analyzer_info(dataset):
+            print("anal")
+            data_forms = dataset.data[0]
+            data_forms.anal_pos_tags = []
+
+            for sentence_i, sentence in enumerate(data_forms.word_strings):
+                sentence_pos_tags = []
+                for word_i, word in enumerate(sentence):
+                    sentence_pos_tags.append([tag_map[w.tag] if w.tag in tag_map else counter.get_next(w.tag) for w in analyses.get(word)])
+                data_forms.anal_pos_tags.append(sentence_pos_tags)
+
+
+        add_analyzer_info(self.train)
+        add_analyzer_info(self.dev)
+        add_analyzer_info(self.test)
+
+        self.pos_map = tag_map
+
+
+        if pretrained:
+            print("Loading pretrained vectors from {}".format(pretrained))
+            word_vec = load_pretrained_vectors(pretrained)
+            print("Renumbering according to pretrained embedding")
+            words = ["<pad>", "<unk>"] + list(word_vec.keys())
+            words_map = {word:i for i, word in enumerate(words)}
+
+            def renumber_dataset(dataset):
+                data_forms = dataset.data[0]
+                data_forms.words_map = word_vec
+                data_forms.words = words
+
+                for i, sentence in enumerate(data_forms.word_strings):
+                    # map words to correct indexes
+                    data_forms.word_ids[i] = np.array(
+                        list(map(lambda slovo: words_map[slovo] if slovo in words_map else 1, sentence)))
+
+            # forms
+            renumber_dataset(self.train)
+            renumber_dataset(self.dev)
+            renumber_dataset(self.test)
+
+
+            # generate emgedding matrix
+            embed_dim = 300
+            nb_words = len(words)
+            embedding_matrix = np.zeros((nb_words, embed_dim))
+            for word, i in words_map.items():
+                # <pad>
+                if i == 0:
+                    v = np.zeros((embed_dim,))
+                    v[0] = 1
+                elif i == 1:
+                    v = np.zeros((embed_dim,))
+                    v[1] = 1
+                else:
+                    v = word_vec[word]
+
+                embedding_matrix[i] = v
+
+            self.embedding_matrix = embedding_matrix
+
+
+
+
+
+
+
+
+
+
