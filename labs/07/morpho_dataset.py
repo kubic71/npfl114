@@ -2,6 +2,9 @@ import os
 import sys
 import urllib.request
 import zipfile
+import io
+
+
 
 import numpy as np
 
@@ -22,6 +25,16 @@ import numpy as np
 #   - charseqs_map: String -> character_sequence_id map.
 #   - charseqs: Character_sequence_id -> [characters], where character is an index
 #       to the dataset alphabet.
+
+def load_pretrained_vectors(fname):
+    fin = io.open(fname, 'r', encoding='utf-8', newline='\n', errors='ignore')
+    n, d = map(int, fin.readline().split())
+    data = {}
+    for line in fin:
+        tokens = line.rstrip().split(' ')
+        data[tokens[0]] = list(map(float, tokens[1:]))
+    return data
+
 class MorphoDataset:
     _URL = "https://ufal.mff.cuni.cz/~straka/courses/npfl114/1819/datasets/"
 
@@ -161,7 +174,8 @@ class MorphoDataset:
                 yield batch
 
 
-    def __init__(self, dataset, add_bow_eow=False, max_sentences=None):
+    def __init__(self, dataset, add_bow_eow=False, max_sentences=None, pretrained="5k.vec"):
+
         path = "{}.zip".format(dataset)
         if not os.path.exists(path):
             print("Downloading dataset {}...".format(dataset), file=sys.stderr)
@@ -175,3 +189,37 @@ class MorphoDataset:
                                                         shuffle_batches=dataset == "train",
                                                         add_bow_eow=add_bow_eow,
                                                         max_sentences=max_sentences))
+
+
+        if pretrained:
+            print("Loading pretrained vectors from {}".format(pretrained))
+            word_vec = load_pretrained_vectors(pretrained)
+            print("Renumbering according to pretrained embedding")
+            words = ["<pad>", "<unk>"] + list(word_vec.keys())
+            words_map = {word:i for i, word in enumerate(words)}
+
+            def renumber_dataset(dataset):
+                data_forms = dataset.data[0]
+                data_forms.words_map = word_vec
+                data_forms.words = words
+
+                for i, sentence in enumerate(data_forms.word_strings):
+                    # map words to correct indexes
+                    data_forms.word_ids[i] = np.array(
+                        list(map(lambda slovo: words_map[slovo] if slovo in words_map else 1, sentence)))
+
+
+            # forms
+            renumber_dataset(self.train)
+            renumber_dataset(self.dev)
+            renumber_dataset(self.test)
+            m = 1/0
+            #self.embedding_matrix =
+
+
+
+
+
+
+
+
